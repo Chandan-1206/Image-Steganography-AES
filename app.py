@@ -1,308 +1,231 @@
-from tkinter import *
-import tkinter.filedialog
-from PIL import ImageTk, Image
-from tkinter import messagebox
-from io import BytesIO
+# app.py
+
 import os
-from encrypt import *
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from PIL import Image, ImageTk
+from encrypt import embed_message_aes, extract_message_aes
+
+APP_TITLE = "Image Steganography AES — Chandan"
+ROOT = tk.Tk()
+ROOT.title(APP_TITLE)
+ROOT.geometry("1100x700")
+ROOT.minsize(900, 580)
 
 
-class Stegno:
+style = ttk.Style(ROOT)
+try:
+    style.theme_use("clam")
+except:
+    pass
 
-    art = '''\
-  SSSS  TTTTT  EEEEE  GGGGG   AAAAAAA  N   N  OOOOO  GGGGG  RRRRR  AAAAAAA PPPPP  H   H  Y   Y
- S        T    E      G       A     A  NN  N  O   O  G      R   R  A     A P   P  H   H   Y Y 
-  SSS     T    EEEE   G  GG   AAAAAAA  N N N  O   O  G  GG  RRRRR  AAAAAAA PPPPP  HHHHH    Y  
-     S    T    E      G   G   A     A  N  NN  O   O  G   G  R  R   A     A P      H   H    Y  
- SSSS     T    EEEEE  GGGGG   A     A  N   N  OOOOO  GGGGG  R   R  A     A P      H   H    Y  
-    '''
+style.configure("Header.TLabel", font=("Consolas", 18, "bold"))
+style.configure("Ascii.TLabel", font=("Courier New", 10, "bold"), foreground="#FF0000")
+style.configure("Dev.TLabel", font=("Segoe UI", 10, "italic"), foreground="#ff6f00")
+style.configure("TButton", padding=6)
 
-    art2 = '''\
-    Developed by:
-    Chandan Agarwal - 22103292 (B10)
-    '''
+ASCII_ART = '''\
+  /$$$$$$   /$$                                                                             /$$    
+ /$$__  $$ | $$                                                                            | $$    
+| $$  \__//$$$$$$    /$$$$$$   /$$$$$$   /$$$$$$   /$$$$$$$  /$$$$$$  /$$   /$$  /$$$$$$  /$$$$$$  
+|  $$$$$$|_  $$_/   /$$__  $$ /$$__  $$ |____  $$ /$$_____/ /$$__  $$| $$  | $$ /$$__  $$|_  $$_/  
+ \____  $$ | $$    | $$$$$$$$| $$  \ $$  /$$$$$$$| $$      | $$  \__/| $$  | $$| $$  \ $$  | $$    
+ /$$  \ $$ | $$ /$$| $$_____/| $$  | $$ /$$__  $$| $$      | $$      | $$  | $$| $$  | $$  | $$ /$$
+|  $$$$$$/ |  $$$$/|  $$$$$$$|  $$$$$$$|  $$$$$$$|  $$$$$$$| $$      |  $$$$$$$| $$$$$$$/  |  $$$$/
+ \______/   \___/   \_______/ \____  $$ \_______/ \_______/|__/       \____  $$| $$____/    \___/  
+                              /$$  \ $$                               /$$  | $$| $$                
+                             |  $$$$$$/                              |  $$$$$$/| $$                
+                              \______/                                \______/ |__/             
+'''
 
-    output_image_size = 0
+# Variables
+input_image_path = tk.StringVar()
+output_image_path = tk.StringVar()
+encoded_image_path = tk.StringVar()
+password_var = tk.StringVar()
+status_var = tk.StringVar(value="Ready")
 
-    def main(self, root):
-        root.title('Image Steganography')
-        root.geometry('800x800')
-        root.resizable(width=True, height=True)
-        f = Frame(root)
+_preview_photo = None
+_preview_image = None
 
-        title = Label(f, text='IS-LAB: Image Steganography Project')
-        title.config(font=('Times New Roman', 33))
-        title.grid(pady=90)
+# Helpers
+def set_status(msg):
+    status_var.set(msg)
+    ROOT.update_idletasks()
 
-        b_encode = Button(f, text="Encode Text", command=lambda: self.frame1_encode(
-            f), padx=14, bg="green", fg="white")
-        b_encode.config(font=('Times New Roman', 16))
-        b_decode = Button(f, text="Decode Text", padx=14,
-                          command=lambda: self.frame1_decode(f), bg="red", fg="white")
-        b_decode.config(font=('Times New Roman', 16))
-        b_decode.grid(pady=15)
+def choose_file(var, title="Select file", filetypes=(("PNG","*.png"),("All","*.*"))):
+    p = filedialog.askopenfilename(title=title, filetypes=filetypes)
+    if p:
+        var.set(p)
+        if var is input_image_path or var is encoded_image_path:
+            show_preview(p)
 
-        ascii_art = Label(f, text=self.art)
-        ascii_art.config(font=('Courier', 12), fg="purple")
+def choose_save_location():
+    p = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG","*.png")])
+    if p:
+        output_image_path.set(p)
 
-        ascii_art2 = Label(f, text=self.art2)
-        ascii_art2.config(font=('Times New Roman', 16))
+def clear_all():
+    input_image_path.set("")
+    output_image_path.set("")
+    encoded_image_path.set("")
+    password_var.set("")
+    message_text.delete("1.0", "end")
+    canvas.delete("all")
+    set_status("Cleared")
 
-        root.grid_rowconfigure(1, weight=1)
-        root.grid_columnconfigure(0, weight=1)
+# Preview
+def show_preview(path):
+    global _preview_image
+    try:
+        img = Image.open(path).convert("RGBA")
+        _preview_image = img
+        redraw_preview()
+        set_status(f"Preview loaded: {os.path.basename(path)}")
+    except Exception as e:
+        messagebox.showerror("Preview error", str(e))
 
-        f.grid()
-        title.grid(row=1)
-        b_encode.grid(row=2)
-        b_decode.grid(row=3)
-        ascii_art.grid(row=4, pady=10)
-        ascii_art2.grid(row=5, pady=5)
+def redraw_preview():
+    global _preview_photo, _preview_image
+    canvas.delete("all")
+    if _preview_image is None:
+        return
+    cw, ch = canvas.winfo_width(), canvas.winfo_height()
+    img = _preview_image.copy()
+    img.thumbnail((cw, ch), Image.LANCZOS)
+    _preview_photo = ImageTk.PhotoImage(img)
+    canvas.create_image(cw//2, ch//2, anchor="center", image=_preview_photo)
 
-    def home(self, frame):
-        frame.destroy()
-        self.main(root)
+def on_canvas_resize(event):
+    redraw_preview()
 
-    def frame1_decode(self, f):
-        f.destroy()
-        d_f2 = Frame(root)
-        label_art = Label(d_f2, text='🗝')
-        label_art.config(font=('Times New Roman', 90))
-        label_art.grid(row=1, pady=50)
-        l2 = Label(d_f2, text='Enter a key')
-        l2.config(font=('Times New Roman', 18))
-        l2.grid(pady=15)
-        text_area = Text(d_f2, width=25, height=3)
-        text_area.grid()
-        l1 = Label(d_f2, text='Select the Image with hidden message:')
-        l1.config(font=('Times New Roman', 18))
-        l1.grid(pady=15)
-        bws_button = Button(d_f2, text='Select',
-                            command=lambda: self.frame2_decode(d_f2, text_area),
-                            padx=14, bg='green', fg='white')
-        bws_button.config(font=('Times New Roman', 18))
-        bws_button.grid()
-        back_button = Button(d_f2, text='Cancel',
-                             command=lambda: self.home(d_f2),
-                             padx=14, bg='red', fg='white')
-        back_button.config(font=('Times New Roman', 18))
-        back_button.grid(pady=15)
-        d_f2.grid()
+# Actions
+def do_embed():
+    in_p = input_image_path.get()
+    out_p = output_image_path.get()
+    pw = password_var.get()
+    msg = message_text.get("1.0", "end").strip()
 
-    def frame2_decode(self, d_f2, text_area):
-        d_f3 = Frame(root)
-        key = text_area.get("1.0", "end-1c")
-        myfile = tkinter.filedialog.askopenfilename(filetypes=(
-            [('png', '*.png'), ('jpeg', '*.jpeg'), ('jpg', '*.jpg'), ('All Files', '*.*')]))
-        if not myfile:
-            messagebox.showerror("Error", "You have selected nothing !")
-        else:
-            myimg = Image.open(myfile, 'r')
-            myimage = myimg.resize((300, 200))
-            img = ImageTk.PhotoImage(myimage)
-            l4 = Label(d_f3, text='Selected Image :')
-            l4.config(font=('Times New Roman', 18))
-            l4.grid()
-            panel = Label(d_f3, image=img)
-            panel.image = img
-            panel.grid()
-            hidden_data = self.decode(myimg, key)
-            l2 = Label(d_f3, text='Hidden data is :')
-            l2.config(font=('Times New Roman', 18))
-            l2.grid(pady=10)
-            text_area = Text(d_f3, width=50, height=10)
-            text_area.insert(INSERT, hidden_data)
-            text_area.configure(state='disabled')
-            text_area.grid()
-            back_button = Button(d_f3, text='Cancel',
-                                 command=lambda: self.page3(d_f3))
-            back_button.config(font=('Times New Roman', 11))
-            back_button.grid(pady=15)
-            d_f3.grid(row=1)
-            d_f2.destroy()
+    if not in_p or not out_p or not pw or not msg:
+        messagebox.showwarning("Missing fields", "Fill all fields before embedding.")
+        return
 
-    def decode(self, image, key):
-        if not key.strip():
-            messagebox.showerror("Error", "Decryption key cannot be empty!")
-            return ""
+    try:
+        set_status("Encrypting + Embedding...")
+        embed_message_aes(in_p, out_p, msg, pw)
+        messagebox.showinfo("Success", "Message encrypted & hidden.")
+        set_status("Done")
+    except Exception as e:
+        messagebox.showerror("Error", str(e))
+        set_status("Failed")
 
-        data = ''
-        imgdata = iter(image.getdata())
+def do_extract():
+    enc_p = encoded_image_path.get()
+    pw = password_var.get()
 
-        while True:
-            pixels = [value for value in imgdata.__next__()[:3] +
-                      imgdata.__next__()[:3] +
-                      imgdata.__next__()[:3]]
+    if not enc_p or not pw:
+        messagebox.showwarning("Missing fields", "Select encoded image and enter password.")
+        return
 
-            binstr = ''.join('0' if i % 2 == 0 else '1' for i in pixels[:8])
-            data += chr(int(binstr, 2))
+    try:
+        set_status("Extracting + Decrypting...")
+        msg = extract_message_aes(enc_p, pw)
+        message_text.delete("1.0", "end")
+        message_text.insert("1.0", msg)
+        messagebox.showinfo("Done", "Message extracted successfully.")
+        set_status("Done")
+    except Exception as e:
+        messagebox.showerror("Error", str(e))
+        set_status("Failed")
 
-            if pixels[-1] % 2 != 0:
-                return decryptMessage(data, key)
+# Menu
+menubar = tk.Menu(ROOT)
+filemenu = tk.Menu(menubar, tearoff=0)
+filemenu.add_command(label="Open Input Image...", command=lambda: choose_file(input_image_path))
+filemenu.add_command(label="Open Encoded Image...", command=lambda: choose_file(encoded_image_path))
+filemenu.add_separator()
+filemenu.add_command(label="Exit", command=ROOT.quit)
+menubar.add_cascade(label="File", menu=filemenu)
 
+helpmenu = tk.Menu(menubar, tearoff=0)
+helpmenu.add_command(label="About", command=lambda: messagebox.showinfo("About", f"{APP_TITLE}\nDeveloped by Chandan Agarwal"))
+menubar.add_cascade(label="Help", menu=helpmenu)
+ROOT.config(menu=menubar)
 
+# HEADER UI
+header = ttk.Frame(ROOT, padding=10)
+header.pack(fill="x")
 
-    def frame1_encode(self, f):
-        f.destroy()
-        f2 = Frame(root)
-        label_art = Label(f2, text='ꗃ')
-        label_art.config(font=('Times New Roman', 90))
-        label_art.grid(row=1, pady=50)
-        l1 = Label(f2, text='Select the Image\n to hide your message:')
-        l1.config(font=('Times New Roman', 18))
-        l1.grid(pady=15)
+ascii_label = ttk.Label(header, text=ASCII_ART, style="Ascii.TLabel", justify="left")
+ascii_label.pack(side="left", padx=10)
 
-        bws_button = Button(f2, text='Select',
-                            command=lambda: self.frame2_encode(f2),padx='14',bg='green',fg='white')
-        bws_button.config(font=('Times New Roman', 18))
-        bws_button.grid()
-        back_button = Button(
-            f2, text='Cancel', command=lambda: Stegno.home(self, f2),padx='14',bg='red',fg='white')
-        back_button.config(font=('Times New Roman', 18))
-        back_button.grid(pady=15)
-        back_button.grid()
-        f2.grid()
+dev_info = ttk.Frame(header)
+dev_info.pack(side="right")
+ttk.Label(dev_info, text="Image Steganography AES", style="Header.TLabel").pack(anchor="e")
+ttk.Label(dev_info, text="Developed by Chandan Agarwal", style="Dev.TLabel").pack(anchor="e")
 
-    def frame2_encode(self, f2):
-        ep = Frame(root)
-        myfile = tkinter.filedialog.askopenfilename(filetypes=(
-            [('png', '*.png'), ('jpeg', '*.jpeg'), ('jpg', '*.jpg'), ('All Files', '*.*')]))
-        if not myfile:
-            messagebox.showerror("Error", "Image not selected!")
-        else:
-            myimg = Image.open(myfile)
-            myimage = myimg.resize((300, 200))
-            img = ImageTk.PhotoImage(myimage)
+# Color stripes
+tk.Frame(ROOT, height=5, bg="#2eb8ff").pack(fill="x")
+tk.Frame(ROOT, height=4, bg="#df5b8a").pack(fill="x")
 
-            l3 = Label(ep, text='Selected Image')
-            l3.config(font=('Times New Roman', 18))
-            l3.grid()
-            panel = Label(ep, image=img)
-            panel.image = img
-            self.output_image_size = os.stat(myfile)
-            self.o_image_w, self.o_image_h = myimg.size
-            panel.grid()
-            l2 = Label(ep, text='Enter the message')
-            l2.config(font=('Times New Roman', 18))
-            l2.grid(pady=15)
-            text_area = Text(ep, width=50, height=10)
-            text_area.grid()
-            l3 = Label(ep, text='Enter the key')
-            l3.config(font=('Times New Roman', 18))
-            l3.grid(pady=15)
-            text_area_key = Text(ep, width=20, height=5)
-            text_area_key.grid()
-            encode_button = Button(
-                ep, text='Cancel', command=lambda: Stegno.home(self, ep))
-            encode_button.config(font=('Times New Roman', 11))
-            data = text_area.get("1.0", "end-1c")
+# MAIN PANED WINDOW
+pw = ttk.PanedWindow(ROOT, orient=tk.HORIZONTAL)
+pw.pack(fill="both", expand=True, padx=10, pady=10)
 
-            back_button = Button(ep, text='Encode', command=lambda: [self.enc_fun(
-            text_area, myimg, text_area_key), Stegno.home(self, ep)])
-            back_button.config(font=('Times New Roman', 11))
-            back_button.grid(pady=15)
-            encode_button.grid()
-            ep.grid(row=1)
-            f2.destroy()
+left = ttk.Frame(pw, width=380)
+right = ttk.Frame(pw)
+pw.add(left, weight=0)
+pw.add(right, weight=1)
 
-    def info(self):
-        try:
-            str = 'original image:-\nsize of original image:{}mb\nwidth: {}\nheight: {}\n\n' \
-                  'decoded image:-\nsize of decoded image: {}mb\nwidth: {}' \
-                '\nheight: {}'.format(self.output_image_size.st_size/1000000,
-                                      self.o_image_w, self.o_image_h,
-                                      self.d_image_size/1000000,
-                                      self.d_image_w, self.d_image_h)
-            messagebox.showinfo('info', str)
-        except:
-            messagebox.showinfo('Info', 'Unable to get the information')
+# LEFT PANEL
+ttk.Label(left, text="Controls", font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=10)
 
-    # genData method converts each character in the input data into its 8-bit binary representation and stores it in a list.
-    def genData(self, data):
-        newd = []
+# Input image
+ttk.Label(left, text="Input Image:").pack(anchor="w")
+ttk.Entry(left, textvariable=input_image_path, width=42).pack(anchor="w")
+ttk.Button(left, text="Browse", command=lambda: choose_file(input_image_path)).pack(anchor="w", pady=4)
 
-        for i in data:
-            newd.append(format(ord(i), '08b'))
-        return newd
+# Output image
+ttk.Label(left, text="Save As (encoded):").pack(anchor="w", pady=(10,0))
+ttk.Entry(left, textvariable=output_image_path, width=42).pack(anchor="w")
+ttk.Button(left, text="Choose Location", command=choose_save_location).pack(anchor="w", pady=4)
 
-    # modPix method modifies the least significant bit of each pixel in the input pix according to the binary representation of the characters in datalist. It yields modified pixel values
-    def modPix(self, pix, data):
-        datalist = self.genData(data)
-        # print(datalist)
-        lendata = len(datalist)
-        imdata = iter(pix)
-        for i in range(lendata):
-            # Extracting 3 pixels at a time
-            pix = [value for value in imdata.__next__()[:3] +
-                   imdata.__next__()[:3] +
-                   imdata.__next__()[:3]]
-            # print(pix)
-            # Pixel value should be made
-            # odd for 1 and even for 0
-            for j in range(0, 8):
-                if (datalist[i][j] == '0') and (pix[j] % 2 != 0):
-                    pix[j] -= 1
+# Encoded input
+ttk.Label(left, text="Encoded Image (for extraction):").pack(anchor="w", pady=(14,0))
+ttk.Entry(left, textvariable=encoded_image_path, width=42).pack(anchor="w")
+ttk.Button(left, text="Browse", command=lambda: choose_file(encoded_image_path)).pack(anchor="w", pady=4)
 
-                elif (datalist[i][j] == '1') and (pix[j] % 2 == 0):
-                    pix[j] -= 1
-            # ninth pixel of every set tells
-            # whether to stop or read further.
-            # even means keep reading; odd means the
-            # message is over.
-            if (i == lendata - 1):
-                if (pix[-1] % 2 == 0):
-                    pix[-1] -= 1
-            else:
-                if (pix[-1] % 2 != 0):
-                    pix[-1] -= 1
+# Password
+ttk.Label(left, text="Password:").pack(anchor="w", pady=(14,0))
+pw_entry = ttk.Entry(left, textvariable=password_var, show="*", width=30)
+pw_entry.pack(anchor="w")
 
-            pix = tuple(pix)
-            # print(pix)
-            yield pix[0:3]
-            yield pix[3:6]
-            yield pix[6:9]
+# Show password toggle
+show_pw = tk.BooleanVar()
+def toggle_pw():
+    pw_entry.config(show="" if show_pw.get() else "*")
+ttk.Checkbutton(left, text="Show", variable=show_pw, command=toggle_pw).pack(anchor="w", pady=4)
 
-    def encode_enc(self, newimg, data):
-        w = newimg.size[0]
-        # print(w)
-        (x, y) = (0, 0)
+# Buttons
+ttk.Button(left, text="Encrypt & Hide", command=do_embed).pack(anchor="w", fill="x", pady=(14,6))
+ttk.Button(left, text="Extract & Decrypt", command=do_extract).pack(anchor="w", fill="x", pady=4)
+ttk.Button(left, text="Clear", command=clear_all).pack(anchor="w", fill="x", pady=4)
 
-        for pixel in self.modPix(newimg.getdata(), data):
+# RIGHT PANEL
+# Preview area
+ttk.Label(right, text="Image Preview", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+canvas = tk.Canvas(right, bg="#222", bd=2, relief="sunken")
+canvas.pack(fill="both", expand=True, pady=10)
+canvas.bind("<Configure>", on_canvas_resize)
 
-            # Putting modified pixels in the new image
-            newimg.putpixel((x, y), pixel)
-            if (x == w - 1):
-                x = 0
-                y += 1
-            else:
-                x += 1
+# Message box
+ttk.Label(right, text="Message (Input / Output)", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+message_text = tk.Text(right, height=6, wrap="word")
+message_text.pack(fill="x", pady=(4,10))
 
-    def enc_fun(self, text_area, myimg, text_area_key):
-        data = text_area.get("1.0", "end-1c")
-        key = text_area_key.get("1.0", "end-1c")
-        # print(data)
-        if (len(data) == 0):
-            messagebox.showinfo("Alert", "Kindly enter text in TextBox")
-        else:
-            newimg = myimg.copy()
-            # change data
-            newmsg = encryptMessage(data, key)
-            # print(newmsg)
-            self.encode_enc(newimg, newmsg)
-            my_file = BytesIO()
-            temp = os.path.splitext(os.path.basename(myimg.filename))[0]
-            newimg.save(tkinter.filedialog.asksaveasfilename(
-            initialfile=temp, filetypes=([('png', '*.png')]), defaultextension=".png"))
-            self.d_image_size = my_file.tell()
-            self.d_image_w, self.d_image_h = newimg.size
-            messagebox.showinfo(
-                "Success", "Successfully encoded your message!")
+# STATUS BAR
+status_frame = ttk.Frame(ROOT)
+status_frame.pack(fill="x", side="bottom")
+ttk.Label(status_frame, textvariable=status_var, font=("Segoe UI", 9)).pack(anchor="w", padx=10, pady=6)
 
-    def page3(self, frame):
-        frame.destroy()
-        self.main(root)
-
-
-root = Tk()
-o = Stegno()
-o.main(root)
-root.mainloop()
+ROOT.mainloop()
